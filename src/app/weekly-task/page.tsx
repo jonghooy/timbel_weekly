@@ -256,9 +256,9 @@ export default function WeeklyTaskPage() {
   }, []);
   
   // 사용자 정보 및 주간 업무 데이터 로드 함수
-  const loadUserAndTasks = async () => {
-    try {
-      setIsLoading(true);
+    const loadUserAndTasks = async () => {
+      try {
+        setIsLoading(true);
       setError(null);
       
       // 전체 로딩 타임아웃 처리
@@ -289,19 +289,19 @@ export default function WeeklyTaskPage() {
       } catch (sessionError) {
         console.error('세션 확인 중 오류 발생:', sessionError);
       }
-      
-      // 현재 사용자 정보 가져오기
-      const user = await getCurrentUser();
-      if (!user) {
+        
+        // 현재 사용자 정보 가져오기
+        const user = await getCurrentUser();
+        if (!user) {
         // 사용자가 없으면 로그인 페이지로 리디렉션 (부드러운 전환)
         clearTimeout(globalTimeoutId); // 타임아웃 취소
         window.location.replace('/login');
-        return;
-      }
-      
-      setUserId(user.id);
-      setUser(user);
-      setSelectedUserId(user.id);
+          return;
+        }
+        
+        setUserId(user.id);
+        setUser(user);
+        setSelectedUserId(user.id);
       
       // users 테이블에 정보가 없는 경우 자동으로 생성
       try {
@@ -324,8 +324,8 @@ export default function WeeklyTaskPage() {
         console.error('팀/부서 정보 로드 중 오류:', loadError);
         // 오류가 발생해도 계속 진행
       }
-      
-      // 사용자 프로필 정보 가져오기
+        
+        // 사용자 프로필 정보 가져오기
       let userDetails = null;
       try {
         userDetails = await getUserDetails(user.id);
@@ -334,21 +334,21 @@ export default function WeeklyTaskPage() {
         // 프로필 로드 실패 시 기본값으로 계속 진행
       }
       
-      if (userDetails) {
-        setProfile(userDetails);
-        
-        // 권한에 따라 볼 수 있는 사용자 설정
-        const hasHigherPermission = [
-          UserRole.SUPER, 
-          UserRole.ADMIN, 
-          UserRole.MANAGER, 
-          UserRole.TEAM_LEADER
-        ].includes(userDetails.role as UserRole);
-        
-        setHasViewPermission(hasHigherPermission);
-        
-        // 권한이 있는 경우, 볼 수 있는 사용자 목록 가져오기
-        if (hasHigherPermission) {
+        if (userDetails) {
+          setProfile(userDetails);
+          
+          // 권한에 따라 볼 수 있는 사용자 설정
+          const hasHigherPermission = [
+            UserRole.SUPER, 
+            UserRole.ADMIN, 
+            UserRole.MANAGER, 
+            UserRole.TEAM_LEADER
+          ].includes(userDetails.role as UserRole);
+          
+          setHasViewPermission(hasHigherPermission);
+          
+          // 권한이 있는 경우, 볼 수 있는 사용자 목록 가져오기
+          if (hasHigherPermission) {
           try {
             const accessibleUsersList = await getUsersWithWeeklyTasks(user.id);
             setAccessibleUsers(accessibleUsersList);
@@ -437,25 +437,25 @@ export default function WeeklyTaskPage() {
             setAccessibleUsers([]);
             setTeamMembers([]);
           }
+          }
+        } else {
+          // 사용자 정보가 없는 경우 기본 정보 설정
+          setProfile({
+            id: user.id,
+            email: user.email || "",
+            full_name: user.user_metadata?.full_name || "사용자",
+            department_id: null,
+            team_id: null,
+            role: "MEMBER",
+            avatar_url: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+          
+          // 기본적으로 본인의 주간 업무만 볼 수 있음
+          setHasViewPermission(false);
         }
-      } else {
-        // 사용자 정보가 없는 경우 기본 정보 설정
-        setProfile({
-          id: user.id,
-          email: user.email || "",
-          full_name: user.user_metadata?.full_name || "사용자",
-          department_id: null,
-          team_id: null,
-          role: "MEMBER",
-          avatar_url: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
         
-        // 기본적으로 본인의 주간 업무만 볼 수 있음
-        setHasViewPermission(false);
-      }
-      
       // 주간 업무 데이터 로드
       try {
         await loadWeeklyTasks(user.id);
@@ -499,18 +499,18 @@ export default function WeeklyTaskPage() {
         // 모든 데이터 로딩 후 이벤트 시스템 초기화
         initializeEventSystem();
       }, 200);
-    } catch (error) {
-      console.error("데이터 로드 중 오류 발생:", error);
+      } catch (error) {
+        console.error("데이터 로드 중 오류 발생:", error);
       setError("데이터를 불러오는 중 문제가 발생했습니다. 새로고침 후 다시 시도해주세요.");
-      toast({
-        title: "오류 발생",
-        description: "데이터를 불러오는 중 문제가 발생했습니다.",
-        variant: "destructive",
-      });
-      setIsLoading(false);
-    }
-  };
-
+        toast({
+          title: "오류 발생",
+          description: "데이터를 불러오는 중 문제가 발생했습니다.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+      }
+    };
+    
   // 사용자 정보 및 주간 업무 데이터 로드
   useEffect(() => {
     const loadInitialData = async () => {
@@ -539,6 +539,16 @@ export default function WeeklyTaskPage() {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     
     try {
+      // 먼저 데이터를 초기화합니다 (사용자 전환 시 이전 데이터가 보이지 않도록)
+      const emptyData = generateWeeksData().map(week => ({
+        ...week,
+        thisWeekPlans: "",
+        nextWeekPlans: "",
+        isExistInDB: false
+      }));
+      setWeeksData(emptyData);
+      applyWeekFilter(emptyData);
+      
       // 로딩 타임아웃 처리
       timeoutId = setTimeout(() => {
         setIsLoading(false);
@@ -574,8 +584,8 @@ export default function WeeklyTaskPage() {
       // 타임아웃이 발생하지 않았다면 취소
       clearTimeout(timeoutId);
       
-      // DB 데이터를 weeksData에 병합
-      const updatedWeeksData = weeksData.map(week => {
+      // DB 데이터를 weeksData에 병합 (빈 데이터에서 시작)
+      const updatedWeeksData = generateWeeksData().map(week => {
         // 해당 주차에 대한 DB 데이터 찾기
         const taskData = tasks.find(task => task.week_number === week.weekNum);
         
@@ -665,9 +675,29 @@ export default function WeeklyTaskPage() {
       // 이전 사용자 ID 저장 (null인 경우 기본값으로 빈 문자열 사용)
       const previousUserId = selectedUserId || userId || "";
       
+      // 동일 사용자 선택 시 무시
+      if (previousUserId === newUserId) return;
+      
+      // 토스트 메시지로 사용자 변경 알림
+      toast({
+        title: "사용자 변경 중",
+        description: `${accessibleUsers.find(u => u.id === newUserId)?.full_name || "선택한 사용자"}의 주간 업무를 로드합니다...`,
+        variant: "default",
+      });
+      
       // 상태 업데이트
       setIsLoading(true);
       setSelectedUserId(newUserId);
+      
+      // 먼저 데이터 초기화
+      const emptyData = generateWeeksData().map(week => ({
+        ...week,
+        thisWeekPlans: "",
+        nextWeekPlans: "",
+        isExistInDB: false
+      }));
+      setWeeksData(emptyData);
+      applyWeekFilter(emptyData);
       
       // 로딩 타임아웃 설정
       const timeoutId = setTimeout(() => {
@@ -717,7 +747,7 @@ export default function WeeklyTaskPage() {
       // 오류 처리
       setIsLoading(false);
     }
-  }, [selectedUserId, accessibleUsers, loadWeeklyTasks, userId]);
+  }, [selectedUserId, accessibleUsers, loadWeeklyTasks, userId, generateWeeksData, applyWeekFilter]);
 
   // 변경 핸들러 수정
   const handleInputChange = (weekNum: number, field: string, value: string) => {
@@ -839,7 +869,7 @@ export default function WeeklyTaskPage() {
   const renderUserSelectionUI = () => {
     // 팀장이나 사업부장 권한이 있을 경우 탭 UI 표시
     if ((profile?.role === UserRole.TEAM_LEADER || profile?.role === UserRole.MANAGER) && teamMembers.length > 0) {
-      return (
+  return (
         <Tabs 
           defaultValue="my-tasks" 
           value={activeTab}
@@ -862,7 +892,7 @@ export default function WeeklyTaskPage() {
                       </AvatarFallback>
                     </Avatar>
                     <span>내 업무</span>
-                  </div>
+        </div>
                 </TabsTrigger>
                 
                 {/* 사업부장인 경우 팀별로 그룹화하여 탭 표시 */}
@@ -875,11 +905,11 @@ export default function WeeklyTaskPage() {
                     >
                       <div className="flex items-center space-x-2">
                         <span>{team.name !== '팀 이름 없음' ? team.name : getTeamName(team.original_team_id) || '팀 미지정'} ({team.members.length}명)</span>
-                      </div>
+        </div>
                       {/* 툴팁 추가 */}
                       <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 bg-gray-900 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-50">
                         {profile?.department_name || '사업부 미지정'} / {team.name !== '팀 이름 없음' ? team.name : getTeamName(team.original_team_id) || '팀 미지정'}
-                      </div>
+      </div>
                     </TabsTrigger>
                     
                     {/* 팀원 목록 드롭다운 */}
@@ -1001,12 +1031,12 @@ export default function WeeklyTaskPage() {
                   disabled={isLoading}
                 >
                   <SelectTrigger className="w-full bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700">
-                    <SelectValue placeholder="사용자 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
+              <SelectValue placeholder="사용자 선택" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
                       <SelectLabel>사용자 목록</SelectLabel>
-                      {accessibleUsers.map((user) => (
+                {accessibleUsers.map((user) => (
                         <SelectItem key={user.id} value={user.id} className="py-2">
                           <div className="flex items-center">
                             <Avatar className="h-6 w-6 mr-2">
@@ -1022,11 +1052,11 @@ export default function WeeklyTaskPage() {
                               ) : null}
                             </span>
                           </div>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
               </div>
               
               {isLoading ? (
@@ -1193,12 +1223,12 @@ export default function WeeklyTaskPage() {
                   내 업무로 돌아가기
                 </Button>
               </div>
-            </div>
-          )}
-          
-          {/* 주간 업무 리스트 */}
-          <Card className="border-none shadow-md overflow-hidden">
-            <CardContent className="p-0">
+        </div>
+      )}
+      
+      {/* 주간 업무 리스트 */}
+      <Card className="border-none shadow-md overflow-hidden">
+        <CardContent className="p-0">
               <div className="relative">
                 {/* 주차 필터 버튼 */}
                 <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 p-3 flex items-center justify-between">
@@ -1243,18 +1273,18 @@ export default function WeeklyTaskPage() {
                     >
                       전체
                     </button>
-                  </div>
+              </div>
                   
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     총 {filteredWeeksData.length}개 주차 표시 중
-                  </div>
+            </div>
                 </div>
                 
                 {/* 테이블 컨테이너 - 버블링 문제 해결을 위해 구조 단순화 */}
-                <div 
-                  id="table-container"
+              <div 
+                id="table-container"
                   ref={tableContainerRef}
-                  className="overflow-auto max-h-[calc(100vh-12rem)]"
+                className="overflow-auto max-h-[calc(100vh-12rem)]"
                   style={{ position: 'relative', zIndex: 1 }}
                 >
                   <table 
@@ -1277,25 +1307,25 @@ export default function WeeklyTaskPage() {
                         <th className="py-4 text-center text-white font-bold border-b-0">상태</th>
                       </tr>
                     </thead>
-                    <tbody>
+                  <tbody>
                       {filteredWeeksData.map((week) => (
-                        <tr
-                          key={week.weekNum}
-                          ref={week.isCurrentWeek ? currentWeekRef : null}
-                          data-current-week={week.isCurrentWeek ? "true" : "false"}
+                      <tr
+                        key={week.weekNum}
+                        ref={week.isCurrentWeek ? currentWeekRef : null}
+                        data-current-week={week.isCurrentWeek ? "true" : "false"}
                           className={`transition-all duration-200 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/20 ${
-                            week.isCurrentWeek
+                          week.isCurrentWeek
                               ? "bg-gradient-to-r from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/10 border-l-4 border-l-blue-500 shadow-[0_2px_5px_rgba(0,0,0,0.05)]"
-                              : week.isPastWeek
-                              ? "bg-gray-50 dark:bg-gray-900/20"
+                            : week.isPastWeek
+                            ? "bg-gray-50 dark:bg-gray-900/20"
                               : "bg-white dark:bg-gray-950/10"
-                          }`}
-                        >
-                          <td className="font-medium text-center py-3 border-t">
+                        }`}
+                      >
+                        <td className="font-medium text-center py-3 border-t">
                             <div className="flex flex-col items-center">
                               {week.isCurrentWeek ? (
                                 <div className="bg-blue-600 dark:bg-blue-700 text-white rounded-full px-3 py-1 text-sm inline-block mb-1.5">
-                                  {week.weekNum}주차
+                          {week.weekNum}주차
                                 </div>
                               ) : (
                                 <div className={`text-lg font-medium mb-1 ${week.isPastWeek ? "text-gray-500 dark:text-gray-400" : ""}`}>
@@ -1303,11 +1333,11 @@ export default function WeeklyTaskPage() {
                                 </div>
                               )}
                               <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {week.dateRange}
+                          {week.dateRange}
                               </div>
                             </div>
-                          </td>
-                          <td className="py-3 px-4 border-t">
+                        </td>
+                        <td className="py-3 px-4 border-t">
                             {isReadOnly || week.isPastWeek ? (
                               <div 
                                 className={`min-h-[100px] p-3 whitespace-pre-wrap break-words rounded-md ${
@@ -1316,18 +1346,21 @@ export default function WeeklyTaskPage() {
                                     : "border border-transparent"
                                 } ${week.isPastWeek ? "text-gray-500 dark:text-gray-400" : ""}`}
                               >
-                                {week.thisWeekPlans || "-"}
-                              </div>
-                            ) : (
-                              <Textarea
-                                defaultValue={week.thisWeekPlans || ""}
+                              {week.thisWeekPlans || "-"}
+                            </div>
+                          ) : (
+                            <Textarea
+                                value={week.thisWeekPlans || ""}
                                 placeholder="이번주 완료한 업무를 입력하세요"
                                 className="resize-none min-h-[100px] border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500"
-                                onBlur={(e) => handleInputChange(week.weekNum, 'thisWeekPlans', e.target.value)}
-                              />
-                            )}
-                          </td>
-                          <td className="py-3 px-4 border-t">
+                                onChange={(e) => handleInputChange(week.weekNum, 'thisWeekPlans', e.target.value)}
+                                onCompositionEnd={(e: React.CompositionEvent<HTMLTextAreaElement>) => 
+                                  handleInputChange(week.weekNum, 'thisWeekPlans', e.currentTarget.value)
+                                }
+                            />
+                          )}
+                        </td>
+                        <td className="py-3 px-4 border-t">
                             {isReadOnly || week.isPastWeek ? (
                               <div 
                                 className={`min-h-[100px] p-3 whitespace-pre-wrap break-words rounded-md ${
@@ -1336,30 +1369,33 @@ export default function WeeklyTaskPage() {
                                     : "border border-transparent"
                                 } ${week.isPastWeek ? "text-gray-500 dark:text-gray-400" : ""}`}
                               >
-                                {week.nextWeekPlans || "-"}
-                              </div>
-                            ) : (
-                              <Textarea
-                                defaultValue={week.nextWeekPlans || ""}
+                              {week.nextWeekPlans || "-"}
+                            </div>
+                          ) : (
+                            <Textarea
+                                value={week.nextWeekPlans || ""}
                                 placeholder="다음주 진행할 업무를 입력하세요"
                                 className="resize-none min-h-[100px] border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500"
-                                onBlur={(e) => handleInputChange(week.weekNum, 'nextWeekPlans', e.target.value)}
-                              />
-                            )}
-                          </td>
-                          <td className="text-center py-3 border-t">
-                            {!isReadOnly && week.isCurrentWeek ? (
-                              <Button 
-                                variant="default" 
-                                size="sm" 
-                                onClick={() => handleSave(week.weekNum)}
+                                onChange={(e) => handleInputChange(week.weekNum, 'nextWeekPlans', e.target.value)}
+                                onCompositionEnd={(e: React.CompositionEvent<HTMLTextAreaElement>) => 
+                                  handleInputChange(week.weekNum, 'nextWeekPlans', e.currentTarget.value)
+                                }
+                            />
+                          )}
+                        </td>
+                        <td className="text-center py-3 border-t">
+                          {!isReadOnly && week.isCurrentWeek ? (
+                            <Button 
+                              variant="default" 
+                              size="sm" 
+                              onClick={() => handleSave(week.weekNum)}
                                 className={`${
                                   savingWeeks.includes(week.weekNum) 
                                     ? "bg-gray-400 text-white" 
                                     : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
                                 } transition-all font-medium shadow-sm`}
-                                disabled={savingWeeks.includes(week.weekNum)}
-                              >
+                              disabled={savingWeeks.includes(week.weekNum)}
+                            >
                                 {savingWeeks.includes(week.weekNum) ? (
                                   <div className="flex items-center">
                                     <LoaderCircle size={14} className="animate-spin mr-1" />
@@ -1368,23 +1404,23 @@ export default function WeeklyTaskPage() {
                                 ) : (
                                   "등록"
                                 )}
-                              </Button>
-                            ) : !isReadOnly && week.isPastWeek ? (
+                            </Button>
+                          ) : !isReadOnly && week.isPastWeek ? (
                               <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs rounded-full">
                                 완료
                               </span>
-                            ) : !isReadOnly ? (
-                              <Button 
-                                variant="default" 
-                                size="sm" 
-                                onClick={() => handleSave(week.weekNum)}
+                          ) : !isReadOnly ? (
+                            <Button 
+                              variant="default" 
+                              size="sm" 
+                              onClick={() => handleSave(week.weekNum)}
                                 className={`${
                                   savingWeeks.includes(week.weekNum) 
                                     ? "bg-gray-400 text-white" 
                                     : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
                                 } transition-all font-medium shadow-sm`}
-                                disabled={savingWeeks.includes(week.weekNum)}
-                              >
+                              disabled={savingWeeks.includes(week.weekNum)}
+                            >
                                 {savingWeeks.includes(week.weekNum) ? (
                                   <div className="flex items-center">
                                     <LoaderCircle size={14} className="animate-spin mr-1" />
@@ -1393,25 +1429,25 @@ export default function WeeklyTaskPage() {
                                 ) : (
                                   "등록"
                                 )}
-                              </Button>
-                            ) : (
+                            </Button>
+                          ) : (
                               <span className={`text-xs px-2 py-0.5 rounded-full ${
                                 week.isExistInDB 
                                   ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" 
                                   : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
                               }`}>
-                                {week.isExistInDB ? "완료됨" : "-"}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                              {week.isExistInDB ? "완료됨" : "-"}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+        </CardContent>
+      </Card>
           
           {/* 페이지 하단 로고 */}
           <div className="mt-10 flex flex-col items-center justify-center opacity-70">
