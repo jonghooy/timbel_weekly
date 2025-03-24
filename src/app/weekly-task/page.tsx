@@ -138,6 +138,8 @@ export default function WeeklyTaskPage() {
     return weeksData;
   };
   
+
+  
   // 주차 데이터 상태
   const [weeksData, setWeeksData] = useState<WeekData[]>(generateWeeksData());
   
@@ -749,10 +751,24 @@ export default function WeeklyTaskPage() {
     }
   }, [selectedUserId, accessibleUsers, loadWeeklyTasks, userId, generateWeeksData, applyWeekFilter]);
 
+  // 테스트 모드 상태 추가
+  const [isTestMode, setIsTestMode] = useState<boolean>(false);
+  
+  // 컴포넌트 마운트 시 테스트 모드 설정 확인
+  useEffect(() => {
+    // 환경 변수에서 테스트 모드 상태 가져오기
+    const testMode = process.env.NEXT_PUBLIC_TEST_MODE === 'true';
+    setIsTestMode(testMode);
+    
+    if (testMode) {
+      console.log('테스트 모드가 활성화되었습니다. 과거 주차 데이터 수정이 가능합니다.');
+    }
+  }, []);
+  
   // 변경 핸들러 수정
   const handleInputChange = (weekNum: number, field: string, value: string) => {
-    // 지난 주차는 변경 불가
-    if (weekNum < currentWeek) return;
+    // 테스트 모드가 활성화되어 있지 않고, 지난 주차인 경우 변경 불가
+    if (!isTestMode && weekNum < currentWeek) return;
     
     setWeeksData(prev => 
       prev.map(week => 
@@ -867,9 +883,10 @@ export default function WeeklyTaskPage() {
 
   // 역할에 따른 UI 표시
   const renderUserSelectionUI = () => {
-    // 팀장이나 사업부장 권한이 있을 경우 탭 UI 표시
-    if ((profile?.role === UserRole.TEAM_LEADER || profile?.role === UserRole.MANAGER) && teamMembers.length > 0) {
-  return (
+    // 관리자 권한(SUPER, ADMIN) 또는 팀장(TEAM_LEADER) 또는 사업부장(MANAGER) 권한이 있고, 볼 수 있는 사용자가 있는 경우 탭 UI 표시
+    if (((profile?.role === UserRole.SUPER || profile?.role === UserRole.ADMIN) && accessibleUsers.length > 0) || 
+        ((profile?.role === UserRole.TEAM_LEADER || profile?.role === UserRole.MANAGER) && teamMembers.length > 0)) {
+      return (
         <Tabs 
           defaultValue="my-tasks" 
           value={activeTab}
@@ -892,8 +909,36 @@ export default function WeeklyTaskPage() {
                       </AvatarFallback>
                     </Avatar>
                     <span>내 업무</span>
-        </div>
+                  </div>
                 </TabsTrigger>
+                
+                {/* SUPER 또는 ADMIN 권한인 경우 모든 사용자 목록 표시 */}
+                {(profile?.role === UserRole.SUPER || profile?.role === UserRole.ADMIN) && 
+                  accessibleUsers
+                    .filter(user => user.id !== userId) // 본인은 이미 '내 업무' 탭으로 표시되어 있음
+                    .map((user) => (
+                      <TabsTrigger 
+                        key={user.id} 
+                        value={`member-${user.id}`}
+                        className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400 data-[state=active]:shadow-md data-[state=active]:border-b-2 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-400 rounded-t-lg rounded-b-none px-4 py-2 h-10 transition-all group relative"
+                        title={`${getDepartmentName(user.department_id)} / ${getTeamName(user.team_id)}`}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Avatar className="h-6 w-6 border-2 border-white dark:border-gray-900 shadow-sm">
+                            <AvatarImage src={user.avatar_url || undefined} />
+                            <AvatarFallback className="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs">
+                              {user.full_name?.substring(0, 2) || '??'}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>{user.full_name || '이름 없음'}</span>
+                        </div>
+                        {/* 툴팁 추가 */}
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 bg-gray-900 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-50">
+                          {getDepartmentName(user.department_id)} / {getTeamName(user.team_id)}
+                        </div>
+                      </TabsTrigger>
+                    ))
+                }
                 
                 {/* 사업부장인 경우 팀별로 그룹화하여 탭 표시 */}
                 {profile?.role === UserRole.MANAGER && teamMembers.map((team: any) => (
@@ -905,11 +950,11 @@ export default function WeeklyTaskPage() {
                     >
                       <div className="flex items-center space-x-2">
                         <span>{team.name !== '팀 이름 없음' ? team.name : getTeamName(team.original_team_id) || '팀 미지정'} ({team.members.length}명)</span>
-        </div>
+                      </div>
                       {/* 툴팁 추가 */}
                       <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 bg-gray-900 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-50">
                         {profile?.department_name || '사업부 미지정'} / {team.name !== '팀 이름 없음' ? team.name : getTeamName(team.original_team_id) || '팀 미지정'}
-      </div>
+                      </div>
                     </TabsTrigger>
                     
                     {/* 팀원 목록 드롭다운 */}
@@ -1005,81 +1050,14 @@ export default function WeeklyTaskPage() {
               </div>
             </div>
           )}
-        </Tabs>
-      );
-    }
-    
-    // SUPER 또는 ADMIN 권한이 있는 경우 사용자 선택 드롭다운 표시
-    if ((profile?.role === UserRole.SUPER || profile?.role === UserRole.ADMIN) && accessibleUsers.length > 0) {
-      return (
-        <div className="mb-6">
-          <div className="flex items-center mb-3">
-            <h2 className="text-lg font-semibold">사용자 업무 확인</h2>
-          </div>
           
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border p-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <div className="flex-grow">
-                <Label htmlFor="userSelect" className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 block">사용자 선택</Label>
-                <Select 
-                  value={selectedUserId || userId || undefined}
-                  onValueChange={(value) => {
-                    if (value !== selectedUserId) {
-                      handleUserChange(value);
-                    }
-                  }}
-                  disabled={isLoading}
-                >
-                  <SelectTrigger className="w-full bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700">
-              <SelectValue placeholder="사용자 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                      <SelectLabel>사용자 목록</SelectLabel>
-                {accessibleUsers.map((user) => (
-                        <SelectItem key={user.id} value={user.id} className="py-2">
-                          <div className="flex items-center">
-                            <Avatar className="h-6 w-6 mr-2">
-                              <AvatarImage src={user.avatar_url || undefined} />
-                              <AvatarFallback className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-200 text-xs">
-                                {user.full_name?.substring(0, 2) || '??'}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span>
-                              {user.full_name} 
-                              {user.id === userId ? (
-                                <span className="ml-1 text-xs font-medium text-blue-600 dark:text-blue-400">(나)</span>
-                              ) : null}
-                            </span>
-                          </div>
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-              </div>
-              
-              {isLoading ? (
-                <div className="flex items-center justify-center sm:justify-start text-gray-500 dark:text-gray-400">
-                  <LoaderCircle size={16} className="mr-2 animate-spin" />
-                  <span className="text-sm">데이터 로드 중...</span>
-                </div>
-              ) : selectedUserId && selectedUserId !== userId ? (
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => {
-                    setSelectedUserId(userId);
-                    loadWeeklyTasks(userId || '');
-                  }}
-                  className="bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-                >
-                  내 업무로 돌아가기
-                </Button>
-              ) : null}
+          {isLoading && (
+            <div className="flex items-center justify-center p-4 text-gray-500 dark:text-gray-400">
+              <LoaderCircle size={16} className="mr-2 animate-spin" />
+              <span className="text-sm">데이터 로드 중...</span>
             </div>
-          </div>
-        </div>
+          )}
+        </Tabs>
       );
     }
     
@@ -1273,7 +1251,7 @@ export default function WeeklyTaskPage() {
                     >
                       전체
                     </button>
-              </div>
+                  </div>
                   
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     총 {filteredWeeksData.length}개 주차 표시 중
@@ -1338,7 +1316,7 @@ export default function WeeklyTaskPage() {
                             </div>
                         </td>
                         <td className="py-3 px-4 border-t">
-                            {isReadOnly || week.isPastWeek ? (
+                            {(isReadOnly || (week.isPastWeek && !isTestMode)) ? (
                               <div 
                                 className={`min-h-[100px] p-3 whitespace-pre-wrap break-words rounded-md ${
                                   !isReadOnly && week.isPastWeek 
@@ -1361,7 +1339,7 @@ export default function WeeklyTaskPage() {
                           )}
                         </td>
                         <td className="py-3 px-4 border-t">
-                            {isReadOnly || week.isPastWeek ? (
+                            {(isReadOnly || (week.isPastWeek && !isTestMode)) ? (
                               <div 
                                 className={`min-h-[100px] p-3 whitespace-pre-wrap break-words rounded-md ${
                                   !isReadOnly && week.isPastWeek 
@@ -1405,6 +1383,28 @@ export default function WeeklyTaskPage() {
                                   "등록"
                                 )}
                             </Button>
+                          ) : !isReadOnly && week.isPastWeek && isTestMode ? (
+                              // 테스트 모드일 때 과거 주차에도 등록 버튼 표시
+                              <Button 
+                                variant="default" 
+                                size="sm" 
+                                onClick={() => handleSave(week.weekNum)}
+                                className={`${
+                                  savingWeeks.includes(week.weekNum) 
+                                    ? "bg-gray-400 text-white" 
+                                    : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+                                } transition-all font-medium shadow-sm`}
+                                disabled={savingWeeks.includes(week.weekNum)}
+                              >
+                                {savingWeeks.includes(week.weekNum) ? (
+                                  <div className="flex items-center">
+                                    <LoaderCircle size={14} className="animate-spin mr-1" />
+                                    <span>처리중</span>
+                                  </div>
+                                ) : (
+                                  "등록"
+                                )}
+                              </Button>
                           ) : !isReadOnly && week.isPastWeek ? (
                               <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs rounded-full">
                                 완료
