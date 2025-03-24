@@ -4,6 +4,8 @@ import { createClient } from '@supabase/supabase-js';
 // 실제 환경에서는 .env.local 파일에 아래 값들이 설정되어 있어야 합니다.
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || '';
+const redirectUrl = process.env.NEXT_PUBLIC_REDIRECT_URL || '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase URL or Anonymous Key');
@@ -24,6 +26,11 @@ export interface UploadResult {
 
 // Supabase 클라이언트 생성
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+
+// 사이트 URL 정보
+export const getRedirectUrl = () => {
+  return redirectUrl || 'http://localhost:3000/auth/callback';
+};
 
 // 부서 목록을 가져오는 함수
 export async function getDepartments() {
@@ -329,16 +336,30 @@ export async function saveWeeklyTask(
 
 // 사용자 로그인
 export async function signIn(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-  
-  if (error) {
-    throw error;
+  try {
+    // 환경 변수에서 사이트 URL을 가져옵니다
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || '';
+    const redirectUrl = process.env.NEXT_PUBLIC_REDIRECT_URL || '';
+    
+    const finalRedirectUrl = redirectUrl || `${siteUrl}/auth/callback` || 'http://localhost:3000/auth/callback';
+    
+    console.log('로그인 리디렉션 URL:', finalRedirectUrl);
+    
+    // 타입스크립트 오류 방지를 위해 options 제거
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+    
+    if (error) {
+      console.error('로그인 오류 세부정보:', error);
+      throw error;
+    }
+    return { success: true, data };
+  } catch (error) {
+    console.error('로그인 오류:', error);
+    return { success: false, error };
   }
-  
-  return data;
 }
 
 // 사용자 로그아웃
@@ -943,64 +964,64 @@ export async function getAllTeams() {
  */
 export async function signUp(email: string, password: string, fullName: string) {
   try {
-    // 이미 존재하는 이메일인지 확인
-    const { data: existingUser, error: checkError } = await supabase
-      .from('users')
-      .select('id, email')
-      .eq('email', email)
-      .maybeSingle();
+    // Supabase 대시보드에서 설정한 URL 사용
+    console.log('회원가입 시작:', { email });
     
-    if (checkError) {
-      console.error('이메일 중복 확인 중 오류 발생:', checkError);
-      // 오류가 발생해도 계속 진행 (사용자 경험 저하 방지)
-    } else if (existingUser) {
-      console.log('이메일 중복:', email);
-      return {
-        user: null,
-        error: '이미 등록된 이메일 주소입니다. 다른 이메일을 사용하거나 로그인해 주세요.',
-        success: false
-      };
-    }
+    // 환경 변수에서 URL 가져오기
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || '';
+    const redirectUrl = process.env.NEXT_PUBLIC_REDIRECT_URL || '';
     
-    // Supabase Auth로 회원가입 진행
+    const finalRedirectUrl = redirectUrl || `${siteUrl}/auth/callback` || 'http://localhost:3000/auth/callback';
+    
+    console.log('회원가입 리디렉션 URL:', finalRedirectUrl);
+    
+    // 사이트 URL 설정
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
-          full_name: fullName,
+          full_name: fullName
         },
-      },
+        emailRedirectTo: finalRedirectUrl
+      }
+    });
+    
+    console.log('회원가입 응답:', { 
+      success: !error, 
+      hasUser: !!data?.user,
+      emailConfirmed: data?.user?.email_confirmed_at,
+      identities: data?.user?.identities
     });
     
     if (error) {
-      // Supabase 에러 메시지 분석
-      if (error.message.includes('User already registered')) {
-        return {
-          user: null,
-          error: '이미 등록된 이메일 주소입니다. 다른 이메일을 사용하거나 로그인해 주세요.',
-          success: false
-        };
-      }
-      
-      return {
-        user: null,
-        error: error.message,
-        success: false
-      };
+      console.error('회원가입 오류 세부정보:', error);
+      throw error;
     }
-    
-    return {
-      user: data.user,
-      session: data.session,
-      success: true
-    };
+    return { success: true, data };
   } catch (error) {
-    console.error('회원가입 중 오류 발생:', error);
-    return {
-      user: null,
-      error: '회원가입 중 오류가 발생했습니다. 다시 시도해 주세요.',
-      success: false
-    };
+    console.error('회원가입 오류:', error);
+    return { success: false, error };
+  }
+}
+
+// 비밀번호 재설정 이메일 발송 함수 수정
+export async function resetPassword(email: string) {
+  try {
+    console.log('비밀번호 재설정 요청:', { email });
+    
+    // 타입 호환성 문제로 인해 옵션 제거
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email);
+    
+    console.log('비밀번호 재설정 응답:', { success: !error });
+    
+    if (error) {
+      console.error('비밀번호 재설정 오류 세부정보:', error);
+      throw error;
+    }
+    return { success: true, data };
+  } catch (error) {
+    console.error('비밀번호 재설정 오류:', error);
+    return { success: false, error };
   }
 } 

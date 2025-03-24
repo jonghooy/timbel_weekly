@@ -128,7 +128,7 @@ export default function SignupPage() {
       setIsSubmitting(true);
 
       // 사용자 정의 회원가입 함수 사용
-      const { user: authUser, error: signUpError, success } = await signUp(
+      const { success, data, error: signUpError } = await signUp(
         formData.email,
         formData.password,
         formData.fullName
@@ -136,18 +136,18 @@ export default function SignupPage() {
 
       // 오류가 발생한 경우
       if (!success || signUpError) {
-        throw new Error(signUpError || "회원가입 처리 중 오류가 발생했습니다.");
+        throw new Error(signUpError instanceof Error ? signUpError.message : "회원가입 처리 중 오류가 발생했습니다.");
       }
       
       // 2. auth.users 테이블에 사용자가 생성될 시간을 확보하기 위한 지연
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // 3. 추가 사용자 정보를 users 테이블에 저장
-      if (authUser) {
+      if (data?.user) {
         try {
           // createUserIfNotExists 함수를 사용하여 사용자 프로필 생성
           const profileCreated = await createUserIfNotExists({
-            id: authUser.id,
+            id: data.user.id,
             email: formData.email,
             user_metadata: {
               full_name: formData.fullName
@@ -164,8 +164,8 @@ export default function SignupPage() {
         }
       }
 
-      // 성공 시 로그인 페이지로 이동
-      alert('회원가입이 완료되었습니다. 로그인 페이지로 이동합니다.');
+      // 성공 시 메시지 표시 - 이메일 인증 안내로 변경
+      alert('회원가입이 신청되었습니다. 인증 메일이 발송되었으니 이메일을 확인해주세요.');
       
       // 완전한 페이지 새로고침을 통해 이동
       window.location.href = '/login';

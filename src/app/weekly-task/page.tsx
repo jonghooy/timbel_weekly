@@ -187,20 +187,22 @@ export default function WeeklyTaskPage() {
     try {
       // 저장 상태 업데이트
       setSavingWeeks(prev => [...prev, weekNum]);
-
-      // 해당 주차 데이터 찾기
-      const weekData = weeksData.find(week => week.weekNum === weekNum);
-      if (!weekData) {
-        throw new Error("주차 데이터를 찾을 수 없습니다.");
-      }
+      
+      // 해당 주차의 textarea 엘리먼트 직접 찾기
+      const thisWeekTextarea = document.getElementById(`this-week-${weekNum}`) as HTMLTextAreaElement;
+      const nextWeekTextarea = document.getElementById(`next-week-${weekNum}`) as HTMLTextAreaElement;
+      
+      // 텍스트 영역에서 직접 값 가져오기
+      const thisWeekPlans = thisWeekTextarea ? thisWeekTextarea.value : "";
+      const nextWeekPlans = nextWeekTextarea ? nextWeekTextarea.value : "";
 
       // API를 통해 데이터 저장
       const success = await saveWeeklyTask(
         selectedUserId,
         currentYear,
         weekNum,
-        weekData.thisWeekPlans,
-        weekData.nextWeekPlans,
+        thisWeekPlans,
+        nextWeekPlans,
         "", // notes (빈 문자열)
         userId // 현재 사용자 ID
       );
@@ -209,11 +211,11 @@ export default function WeeklyTaskPage() {
         throw new Error("주간 업무 저장에 실패했습니다.");
       }
 
-      // 저장 성공 후 상태 업데이트
+      // 저장 성공 후 상태 업데이트 - 이제 텍스트 상태를 직접 갱신
       setWeeksData(prev => 
         prev.map(week => 
           week.weekNum === weekNum 
-            ? { ...week, isExistInDB: true } 
+            ? { ...week, thisWeekPlans, nextWeekPlans, isExistInDB: true } 
             : week
         )
       );
@@ -407,6 +409,65 @@ export default function WeeklyTaskPage() {
               // 팀 목록 설정 - team_name 기준으로 정렬
               setTeamMembers(
                 Object.values(departmentMembersByTeam).sort((a: any, b: any) => {
+                  // '팀 미지정'은 항상 마지막에
+                  if (a.id === 'no-team') return 1;
+                  if (b.id === 'no-team') return -1;
+                  // 그 외에는 이름 순서로 정렬
+                  return a.name.localeCompare(b.name);
+                })
+              );
+            }
+            // SUPER 또는 ADMIN인 경우 모든 사용자를 팀별로 그룹화
+            else if (userDetails.role === UserRole.SUPER || userDetails.role === UserRole.ADMIN) {
+              // 자신을 제외한 모든 접근 가능한 사용자
+              const otherUsers = accessibleUsersList.filter(
+                (member: any) => member.id !== user.id
+              );
+              
+              // 팀별로 사용자 그룹화
+              const usersByTeam = otherUsers.reduce((acc: any, member: any) => {
+                if (!member.team_id) {
+                  if (!acc['no-team']) acc['no-team'] = { id: 'no-team', name: '팀 미지정', members: [] };
+                  acc['no-team'].members.push(member);
+                } else {
+                  if (!acc[member.team_id]) {
+                    // 팀 정보 찾기 로직
+                    let teamName = '팀 이름 없음';
+                    
+                    // 1. teams 배열에서 먼저 찾기
+                    const teamFromList = teams.find((team: any) => team.id === member.team_id);
+                    if (teamFromList && teamFromList.name) {
+                      teamName = teamFromList.name;
+                    } 
+                    // 2. 사용자 자신의 team_name 사용
+                    else if (member.team_name) {
+                      teamName = member.team_name;
+                    }
+                    // 3. accessibleUsersList에서 같은 팀을 가진 다른 사용자의 team_name 사용
+                    else {
+                      const userWithSameTeam = accessibleUsersList.find(
+                        (u: any) => u.team_id === member.team_id && u.team_name
+                      );
+                      if (userWithSameTeam && userWithSameTeam.team_name) {
+                        teamName = userWithSameTeam.team_name;
+                      }
+                    }
+                    
+                    acc[member.team_id] = { 
+                      id: member.team_id, 
+                      name: teamName,
+                      original_team_id: member.team_id, // 원본 팀 ID 보존
+                      members: [] 
+                    };
+                  }
+                  acc[member.team_id].members.push(member);
+                }
+                return acc;
+              }, {});
+              
+              // 팀 목록 설정 - team_name 기준으로 정렬
+              setTeamMembers(
+                Object.values(usersByTeam).sort((a: any, b: any) => {
                   // '팀 미지정'은 항상 마지막에
                   if (a.id === 'no-team') return 1;
                   if (b.id === 'no-team') return -1;
@@ -613,6 +674,17 @@ export default function WeeklyTaskPage() {
       // 필터 적용
       applyWeekFilter(updatedWeeksData);
       
+      // 데이터 로드가 완료된 후, textarea 엘리먼트들의 값 직접 설정
+      setTimeout(() => {
+        updatedWeeksData.forEach(week => {
+          const thisWeekTextarea = document.getElementById(`this-week-${week.weekNum}`) as HTMLTextAreaElement;
+          const nextWeekTextarea = document.getElementById(`next-week-${week.weekNum}`) as HTMLTextAreaElement;
+          
+          if (thisWeekTextarea) thisWeekTextarea.value = week.thisWeekPlans;
+          if (nextWeekTextarea) nextWeekTextarea.value = week.nextWeekPlans;
+        });
+      }, 100);
+      
       // 데이터 로드 완료 후 이벤트 시스템 초기화
       setTimeout(() => {
         initializeEventSystem();
@@ -708,11 +780,11 @@ export default function WeeklyTaskPage() {
         // 실패 시 이전 사용자로 복귀
         setSelectedUserId(previousUserId || null);
         
-        toast({
+      toast({
           title: "로딩 시간 초과",
           description: "해당 사용자의 주간 업무 데이터를 불러오는데 실패했습니다.",
-          variant: "destructive",
-        });
+        variant: "destructive",
+      });
       }, 10000);
       
       try {
@@ -720,7 +792,7 @@ export default function WeeklyTaskPage() {
         await loadWeeklyTasks(newUserId);
         clearTimeout(timeoutId);
         
-        toast({
+      toast({
           title: "사용자 변경 완료",
           description: `${accessibleUsers.find(u => u.id === newUserId)?.full_name || "선택한 사용자"}의 주간 업무를 로드했습니다.`,
           variant: "default",
@@ -733,8 +805,8 @@ export default function WeeklyTaskPage() {
         toast({
           title: "오류 발생",
           description: "해당 사용자의 주간 업무 데이터를 불러오는데 실패했습니다.",
-          variant: "destructive",
-        });
+        variant: "destructive",
+      });
         
         // 이전 사용자의 데이터로 복구 시도 (ID가 있을 경우만)
         if (previousUserId) {
@@ -770,13 +842,13 @@ export default function WeeklyTaskPage() {
     // 테스트 모드가 활성화되어 있지 않고, 지난 주차인 경우 변경 불가
     if (!isTestMode && weekNum < currentWeek) return;
     
-    setWeeksData(prev => 
-      prev.map(week => 
-        week.weekNum === weekNum 
+        setWeeksData(prev => 
+          prev.map(week => 
+            week.weekNum === weekNum 
           ? { ...week, [field]: value } 
-          : week
-      )
-    );
+              : week
+          )
+        );
   };
   
   // 현재 주차로 자동 스크롤
@@ -814,7 +886,7 @@ export default function WeeklyTaskPage() {
           await loadWeeklyTasks(memberId);
         }
       }
-      // 사업부장의 팀 탭인 경우
+      // 팀 탭인 경우 (SUPER, ADMIN, MANAGER 공통)
       else if (tabId.startsWith('team-')) {
         // 팀 탭을 클릭했을 때는 해당 팀의 첫 번째 멤버를 선택
         const teamId = tabId.replace('team-', '');
@@ -886,6 +958,7 @@ export default function WeeklyTaskPage() {
     // 관리자 권한(SUPER, ADMIN) 또는 팀장(TEAM_LEADER) 또는 사업부장(MANAGER) 권한이 있고, 볼 수 있는 사용자가 있는 경우 탭 UI 표시
     if (((profile?.role === UserRole.SUPER || profile?.role === UserRole.ADMIN) && accessibleUsers.length > 0) || 
         ((profile?.role === UserRole.TEAM_LEADER || profile?.role === UserRole.MANAGER) && teamMembers.length > 0)) {
+      
       return (
         <Tabs 
           defaultValue="my-tasks" 
@@ -912,48 +985,20 @@ export default function WeeklyTaskPage() {
                   </div>
                 </TabsTrigger>
                 
-                {/* SUPER 또는 ADMIN 권한인 경우 모든 사용자 목록 표시 */}
-                {(profile?.role === UserRole.SUPER || profile?.role === UserRole.ADMIN) && 
-                  accessibleUsers
-                    .filter(user => user.id !== userId) // 본인은 이미 '내 업무' 탭으로 표시되어 있음
-                    .map((user) => (
-                      <TabsTrigger 
-                        key={user.id} 
-                        value={`member-${user.id}`}
-                        className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400 data-[state=active]:shadow-md data-[state=active]:border-b-2 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-400 rounded-t-lg rounded-b-none px-4 py-2 h-10 transition-all group relative"
-                        title={`${getDepartmentName(user.department_id)} / ${getTeamName(user.team_id)}`}
-                      >
-                        <div className="flex items-center space-x-2">
-                          <Avatar className="h-6 w-6 border-2 border-white dark:border-gray-900 shadow-sm">
-                            <AvatarImage src={user.avatar_url || undefined} />
-                            <AvatarFallback className="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs">
-                              {user.full_name?.substring(0, 2) || '??'}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span>{user.full_name || '이름 없음'}</span>
-                        </div>
-                        {/* 툴팁 추가 */}
-                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 bg-gray-900 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-50">
-                          {getDepartmentName(user.department_id)} / {getTeamName(user.team_id)}
-                        </div>
-                      </TabsTrigger>
-                    ))
-                }
-                
-                {/* 사업부장인 경우 팀별로 그룹화하여 탭 표시 */}
-                {profile?.role === UserRole.MANAGER && teamMembers.map((team: any) => (
+                {/* SUPER, ADMIN, MANAGER 모두 팀별로 탭 표시 */}
+                {teamMembers.map((team: any) => (
                   <div key={team.id} className="relative group">
                     <TabsTrigger 
                       value={`team-${team.id}`}
                       className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400 data-[state=active]:shadow-md data-[state=active]:border-b-2 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-400 rounded-t-lg rounded-b-none px-4 py-2 h-10 transition-all"
-                      title={`${profile?.department_name || '사업부 미지정'} / ${team.name || '팀 미지정'}`}
+                      title={`${team.name || '팀 미지정'}`}
                     >
                       <div className="flex items-center space-x-2">
                         <span>{team.name !== '팀 이름 없음' ? team.name : getTeamName(team.original_team_id) || '팀 미지정'} ({team.members.length}명)</span>
                       </div>
                       {/* 툴팁 추가 */}
                       <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 bg-gray-900 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-50">
-                        {profile?.department_name || '사업부 미지정'} / {team.name !== '팀 이름 없음' ? team.name : getTeamName(team.original_team_id) || '팀 미지정'}
+                        {team.name !== '팀 이름 없음' ? team.name : getTeamName(team.original_team_id) || '팀 미지정'}
                       </div>
                     </TabsTrigger>
                     
@@ -1015,8 +1060,8 @@ export default function WeeklyTaskPage() {
             </div>
           </div>
           
-          {/* 사업부장인 경우 현재 선택된 팀의 멤버 목록 표시 */}
-          {profile?.role === UserRole.MANAGER && activeTab.startsWith('team-') && (
+          {/* 현재 선택된 팀의 멤버 목록 표시 */}
+          {activeTab.startsWith('team-') && (
             <div className="mt-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                 {teamMembers
@@ -1063,7 +1108,7 @@ export default function WeeklyTaskPage() {
     
     return null;
   };
-
+  
   return (
     <div className="p-6 space-y-6">
       {/* 오류 메시지 표시 */}
@@ -1120,7 +1165,7 @@ export default function WeeklyTaskPage() {
         </div>
       ) : (
         <>
-          {/* 헤더 섹션 */}
+      {/* 헤더 섹션 */}
           <div className="mb-8">
             <div className="flex items-center mb-4 relative">
               <div className="flex-1">
@@ -1137,8 +1182,8 @@ export default function WeeklyTaskPage() {
                     <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 text-sm font-medium rounded-full px-3 py-1">
                       {currentWeek}주차
                     </span>
-                  </p>
-                </div>
+          </p>
+        </div>
               </div>
               
               <div className="flex-1 flex justify-end">
@@ -1150,9 +1195,9 @@ export default function WeeklyTaskPage() {
                   avatar_url: profile?.avatar_url || '',
                   user_metadata: user?.user_metadata
                 }} />
-              </div>
-            </div>
-            
+        </div>
+      </div>
+      
             <div className="h-1 w-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full shadow-sm"></div>
           </div>
           
@@ -1162,7 +1207,7 @@ export default function WeeklyTaskPage() {
           {/* 현재 선택된 사용자 정보 표시 (탭 또는 드롭다운에서 선택된 사용자) */}
           {selectedUserId && selectedUserId !== userId && (
             <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-lg shadow-sm border border-blue-200 dark:border-blue-800/50 p-4">
-              <div className="flex items-center">
+        <div className="flex items-center">
                 <Avatar className="h-10 w-10 mr-3 border-2 border-white dark:border-gray-800 shadow-sm">
                   <AvatarImage src={accessibleUsers.find(u => u.id === selectedUserId)?.avatar_url || undefined} />
                   <AvatarFallback className="bg-blue-600 text-white">
@@ -1184,7 +1229,7 @@ export default function WeeklyTaskPage() {
                         }
                         return "";
                       })()}
-                    </span>
+            </span>
                     <span className="ml-2">(읽기 전용 모드)</span>
                   </p>
                 </div>
@@ -1251,7 +1296,7 @@ export default function WeeklyTaskPage() {
                     >
                       전체
                     </button>
-                  </div>
+              </div>
                   
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     총 {filteredWeeksData.length}개 주차 표시 중
@@ -1327,14 +1372,11 @@ export default function WeeklyTaskPage() {
                               {week.thisWeekPlans || "-"}
                             </div>
                           ) : (
-                            <Textarea
-                                value={week.thisWeekPlans || ""}
+                            <textarea
+                                id={`this-week-${week.weekNum}`}
+                                defaultValue={week.thisWeekPlans || ""}
                                 placeholder="이번주 완료한 업무를 입력하세요"
-                                className="resize-none min-h-[100px] border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500"
-                                onChange={(e) => handleInputChange(week.weekNum, 'thisWeekPlans', e.target.value)}
-                                onCompositionEnd={(e: React.CompositionEvent<HTMLTextAreaElement>) => 
-                                  handleInputChange(week.weekNum, 'thisWeekPlans', e.currentTarget.value)
-                                }
+                                className="w-full resize-none min-h-[100px] rounded-md border border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500 p-3"
                             />
                           )}
                         </td>
@@ -1350,14 +1392,11 @@ export default function WeeklyTaskPage() {
                               {week.nextWeekPlans || "-"}
                             </div>
                           ) : (
-                            <Textarea
-                                value={week.nextWeekPlans || ""}
+                            <textarea
+                                id={`next-week-${week.weekNum}`}
+                                defaultValue={week.nextWeekPlans || ""}
                                 placeholder="다음주 진행할 업무를 입력하세요"
-                                className="resize-none min-h-[100px] border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500"
-                                onChange={(e) => handleInputChange(week.weekNum, 'nextWeekPlans', e.target.value)}
-                                onCompositionEnd={(e: React.CompositionEvent<HTMLTextAreaElement>) => 
-                                  handleInputChange(week.weekNum, 'nextWeekPlans', e.currentTarget.value)
-                                }
+                                className="w-full resize-none min-h-[100px] rounded-md border border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500 p-3"
                             />
                           )}
                         </td>
@@ -1385,9 +1424,9 @@ export default function WeeklyTaskPage() {
                             </Button>
                           ) : !isReadOnly && week.isPastWeek && isTestMode ? (
                               // 테스트 모드일 때 과거 주차에도 등록 버튼 표시
-                              <Button 
+                            <Button 
                                 variant="default" 
-                                size="sm" 
+                              size="sm" 
                                 onClick={() => handleSave(week.weekNum)}
                                 className={`${
                                   savingWeeks.includes(week.weekNum) 
@@ -1404,7 +1443,7 @@ export default function WeeklyTaskPage() {
                                 ) : (
                                   "등록"
                                 )}
-                              </Button>
+                            </Button>
                           ) : !isReadOnly && week.isPastWeek ? (
                               <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs rounded-full">
                                 완료

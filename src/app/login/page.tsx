@@ -105,6 +105,17 @@ export default function LoginPage() {
       });
 
       if (error) {
+        console.error('로그인 오류 상세:', error.message);
+        
+        // 이메일 인증 관련 오류 메시지 처리
+        if (error.message.includes('Email not confirmed') || 
+            error.message.includes('not confirmed') || 
+            error.message.includes('이메일이 확인되지 않았습니다')) {
+          throw new Error('이메일 인증이 완료되지 않았습니다. 이메일을 확인해주세요.');
+        } else if (error.message.includes('Invalid login credentials')) {
+          throw new Error('로그인 정보가 올바르지 않습니다. 이메일과 비밀번호를 확인해주세요.');
+        }
+        
         throw new Error(error.message);
       }
 
@@ -243,6 +254,11 @@ export default function LoginPage() {
               >
                 회원가입
               </Link>
+            </div>
+            
+            <div className="text-center text-xs text-gray-500 dark:text-gray-500 px-4 py-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+              <p>회원가입 후에는 인증 이메일을 확인해주세요.</p>
+              <p className="mt-1">인증 완료 후 로그인이 가능합니다.</p>
             </div>
           </CardFooter>
         </Card>
