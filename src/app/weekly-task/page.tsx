@@ -1363,40 +1363,40 @@ export default function WeeklyTaskPage() {
                         <td className="py-3 px-4 border-t">
                             {(isReadOnly || (week.isPastWeek && !isTestMode)) ? (
                               <div 
-                                className={`min-h-[100px] p-3 whitespace-pre-wrap break-words rounded-md ${
+                                className={`min-h-[300px] p-3 whitespace-pre-wrap break-words rounded-md ${
                                   !isReadOnly && week.isPastWeek 
                                     ? "border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50" 
                                     : "border border-transparent"
                                 } ${week.isPastWeek ? "text-gray-500 dark:text-gray-400" : ""}`}
                               >
-                              {week.thisWeekPlans || "-"}
+                              {week.thisWeekPlans || ""}
                             </div>
                           ) : (
                             <textarea
                                 id={`this-week-${week.weekNum}`}
                                 defaultValue={week.thisWeekPlans || ""}
                                 placeholder="이번주 완료한 업무를 입력하세요"
-                                className="w-full resize-none min-h-[100px] rounded-md border border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500 p-3"
+                                className="w-full resize-none min-h-[300px] rounded-md border border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500 p-3"
                             />
                           )}
                         </td>
                         <td className="py-3 px-4 border-t">
                             {(isReadOnly || (week.isPastWeek && !isTestMode)) ? (
                               <div 
-                                className={`min-h-[100px] p-3 whitespace-pre-wrap break-words rounded-md ${
+                                className={`min-h-[300px] p-3 whitespace-pre-wrap break-words rounded-md ${
                                   !isReadOnly && week.isPastWeek 
                                     ? "border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50" 
                                     : "border border-transparent"
                                 } ${week.isPastWeek ? "text-gray-500 dark:text-gray-400" : ""}`}
                               >
-                              {week.nextWeekPlans || "-"}
+                              {week.nextWeekPlans || ""}
                             </div>
                           ) : (
                             <textarea
                                 id={`next-week-${week.weekNum}`}
                                 defaultValue={week.nextWeekPlans || ""}
                                 placeholder="다음주 진행할 업무를 입력하세요"
-                                className="w-full resize-none min-h-[100px] rounded-md border border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500 p-3"
+                                className="w-full resize-none min-h-[300px] rounded-md border border-gray-200 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-500 p-3"
                             />
                           )}
                         </td>
