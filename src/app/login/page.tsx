@@ -136,16 +136,36 @@ export default function LoginPage() {
       
       // 세션이 완전히 설정될 시간을 주기 위해 추가 작업 수행
       try {
-        // 세션이 제대로 설정되었는지 확인하기 위해 현재 세션 가져오기
-        const { data: sessionData } = await supabase.auth.getSession();
+        // 사용자 권한 확인
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', data.user?.id)
+          .single();
         
-        // 세션 확인 후 페이지 이동
-        setTimeout(() => {
-          // 명시적으로 페이지 이동 (force refresh)
-          window.location.href = '/weekly-task';
-        }, 500); // 0.5초 대기
+        if (userError) {
+          console.error('사용자 정보 조회 중 오류:', userError);
+          // 기본 페이지로 이동
+          setTimeout(() => {
+            window.location.href = '/weekly-task';
+          }, 500);
+          return;
+        }
+        
+        // SUPER 권한을 가진 사용자는 관리자 페이지로 이동
+        if (userData.role === 'SUPER') {
+          console.log('SUPER 관리자 감지: 관리자 페이지로 이동');
+          setTimeout(() => {
+            window.location.href = '/admin';
+          }, 500);
+        } else {
+          // 일반 사용자는 주간 업무 페이지로 이동
+          setTimeout(() => {
+            window.location.href = '/weekly-task';
+          }, 500);
+        }
       } catch (sessionError) {
-        console.error('세션 확인 중 오류:', sessionError);
+        console.error('사용자 권한 확인 중 오류:', sessionError);
         // 오류가 발생해도 페이지 이동 시도
         setTimeout(() => {
           window.location.href = '/weekly-task';

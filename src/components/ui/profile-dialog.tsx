@@ -58,6 +58,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
   const [departments, setDepartments] = useState<{id: string, name: string}[]>([]);
   const [teams, setTeams] = useState<{id: string, name: string}[]>([]);
 
+  // 권한 확인용 상태 추가
+  const [isAdmin, setIsAdmin] = useState(false);
+
   // 부서가 변경되면 해당하는 팀 목록 로드
   useEffect(() => {
     if (profile.department) {
@@ -129,6 +132,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
           avatar_url: userDetails.avatar_url || ""
         });
         
+        // 사용자가 SUPER 권한인지 확인
+        setIsAdmin(userDetails.role === "SUPER");
+        
         // 부서가 있으면 해당하는 팀 목록 로드
         if (userDetails.department_id) {
           await loadTeams(userDetails.department_id);
@@ -142,6 +148,8 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
           role: "MEMBER",
           avatar_url: ""
         });
+        
+        setIsAdmin(false);
       }
     } catch (error) {
       console.error("프로필 로드 중 오류 발생:", error);
@@ -230,6 +238,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
 
   // 부서 변경 핸들러
   const handleDepartmentChange = (departmentId: string) => {
+    // 관리자가 아니면 변경 불가능
+    if (!isAdmin) return;
+    
     setProfile(prev => ({
       ...prev,
       department: departmentId === "none" ? "" : departmentId,
@@ -239,6 +250,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
 
   // 팀 변경 핸들러
   const handleTeamChange = (teamId: string) => {
+    // 관리자가 아니면 변경 불가능
+    if (!isAdmin) return;
+    
     setProfile(prev => ({
       ...prev,
       team: teamId === "none" ? "" : teamId
@@ -255,10 +269,27 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
 
   // 권한 변경 핸들러
   const handleRoleChange = (role: string) => {
+    // 관리자가 아니면 변경 불가능
+    if (!isAdmin) return;
+    
     setProfile(prev => ({
       ...prev,
       role: role
     }));
+  };
+
+  // 콤보박스 클릭 이벤트 방지 함수
+  const preventSelectClick = (e: React.MouseEvent) => {
+    if (!isAdmin) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      toast({
+        title: "권한 없음",
+        description: "이 정보는 관리자만 변경할 수 있습니다.",
+        variant: "destructive",
+      });
+    }
   };
 
   // 프로필 업데이트 핸들러
@@ -288,19 +319,29 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
       }
       
       try {
-        // 사용자 프로필 업데이트 (이름, 부서, 팀, 권한, 아바타 URL 포함)
-        const updateResult = await updateUserProfile(user.id, {
+        // 사용자 프로필 업데이트
+        const updateData: any = {
           full_name: profile.name,
-          department_id: profile.department || undefined,
-          team_id: profile.team || undefined,
-          role: profile.role, // 권한 정보도 함께 업데이트
           avatar_url: newAvatarUrl || undefined // 새 이미지 URL 또는 기존 URL
-        });
+        };
+        
+        // 관리자만 추가 정보 업데이트 가능
+        if (isAdmin) {
+          updateData.department_id = profile.department || undefined;
+          updateData.team_id = profile.team || undefined;
+          updateData.role = profile.role;
+        }
+        
+        const updateResult = await updateUserProfile(user.id, updateData);
+        
+        if (!updateResult.success) {
+          throw new Error(typeof updateResult.error === 'string' ? updateResult.error : '프로필 업데이트 실패');
+        }
         
         console.log('프로필 업데이트 결과:', updateResult);
         
-        // 권한 변경 성공 메시지 표시
-        if (user.role !== profile.role) {
+        // 권한 변경 성공 메시지 표시 (관리자인 경우에만)
+        if (isAdmin && user.role !== profile.role) {
           console.log('권한 변경됨:', user.role, '->', profile.role);
           toast({
             title: "권한 변경 완료",
@@ -320,6 +361,8 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
         // 프로필 업데이트 후 1초 뒤 새로고침
         setTimeout(() => {
           router.refresh();
+          // 강제로 페이지 새로고침
+          window.location.reload();
         }, 1000);
       } catch (updateError) {
         console.error('프로필 업데이트 오류 상세 정보:', updateError);
@@ -366,7 +409,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">프로필 정보 수정</DialogTitle>
           <DialogDescription>
-            사용자 정보를 관리하세요.
+            {isAdmin 
+              ? "사용자 정보를 관리하세요." 
+              : "이름과 프로필 이미지만 수정할 수 있습니다. 다른 정보 변경은 관리자에게 문의하세요."}
           </DialogDescription>
         </DialogHeader>
         
@@ -456,68 +501,96 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
                 />
               </div>
               
-              {/* 권한 필드 (선택 가능) */}
+              {/* 권한 필드 - 관리자만 편집 가능, 일반 사용자는 텍스트로 표시 */}
               <div className="space-y-2">
                 <Label htmlFor="role" className="text-base font-medium">권한</Label>
-                <Select
-                  value={profile.role}
-                  onValueChange={handleRoleChange}
-                >
-                  <SelectTrigger id="role" className="w-full">
-                    <SelectValue placeholder="권한 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableRoles.map((role) => (
-                      <SelectItem key={role.value} value={role.value}>
-                        {role.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {isAdmin ? (
+                  <Select
+                    value={profile.role}
+                    onValueChange={handleRoleChange}
+                  >
+                    <SelectTrigger id="role" className="w-full">
+                      <SelectValue placeholder="권한 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableRoles.map((role) => (
+                        <SelectItem key={role.value} value={role.value}>
+                          {role.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="p-2 border rounded-md h-10 flex items-center bg-gray-50 text-gray-700 text-sm">
+                    {getRoleDisplayName(profile.role)}
+                  </div>
+                )}
+                {!isAdmin && (
+                  <p className="text-xs text-gray-500 mt-1">권한 변경은 관리자만 가능합니다</p>
+                )}
               </div>
             </div>
             
             {/* 사업부와 팀 (같은 줄에 배치) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* 사업부 선택 */}
+              {/* 사업부 선택 - 관리자만 편집 가능, 일반 사용자는 텍스트로 표시 */}
               <div className="space-y-2">
                 <Label htmlFor="department" className="text-base font-medium">사업부</Label>
-                <Select
-                  value={profile.department || "none"}
-                  onValueChange={handleDepartmentChange}
-                >
-                  <SelectTrigger id="department" className="w-full">
-                    <SelectValue placeholder="사업부 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">선택 안함</SelectItem>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {isAdmin ? (
+                  <Select
+                    value={profile.department || "none"}
+                    onValueChange={handleDepartmentChange}
+                  >
+                    <SelectTrigger id="department" className="w-full">
+                      <SelectValue placeholder="사업부 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">선택 안함</SelectItem>
+                      {departments.map((dept) => (
+                        <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="p-2 border rounded-md h-10 flex items-center bg-gray-50 text-gray-700 text-sm">
+                    {profile.department 
+                      ? departments.find(dept => dept.id === profile.department)?.name || '알 수 없는 사업부'
+                      : '지정되지 않음'}
+                  </div>
+                )}
+                {!isAdmin && (
+                  <p className="text-xs text-gray-500 mt-1">사업부 변경은 관리자만 가능합니다</p>
+                )}
               </div>
               
-              {/* 팀 선택 */}
+              {/* 팀 선택 - 관리자만 편집 가능, 일반 사용자는 텍스트로 표시 */}
               <div className="space-y-2">
                 <Label htmlFor="team" className="text-base font-medium">팀</Label>
-                <Select
-                  value={profile.team || "none"}
-                  onValueChange={handleTeamChange}
-                  disabled={!profile.department || teams.length === 0}
-                >
-                  <SelectTrigger id="team" className="w-full">
-                    <SelectValue placeholder={!profile.department ? "사업부를 먼저 선택하세요" : "팀 선택"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">선택 안함</SelectItem>
-                    {teams.map((team) => (
-                      <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!profile.department && (
-                  <p className="text-xs text-gray-500">사업부를 먼저 선택하세요.</p>
+                {isAdmin ? (
+                  <Select
+                    value={profile.team || "none"}
+                    onValueChange={handleTeamChange}
+                    disabled={!profile.department}
+                  >
+                    <SelectTrigger id="team" className={`w-full ${!profile.department ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                      <SelectValue placeholder="팀 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">선택 안함</SelectItem>
+                      {teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="p-2 border rounded-md h-10 flex items-center bg-gray-50 text-gray-700 text-sm">
+                    {profile.team 
+                      ? teams.find(team => team.id === profile.team)?.name || '알 수 없는 팀'
+                      : '지정되지 않음'}
+                  </div>
+                )}
+                {!isAdmin && (
+                  <p className="text-xs text-gray-500 mt-1">팀 변경은 관리자만 가능합니다</p>
                 )}
               </div>
             </div>

@@ -87,6 +87,9 @@ export default function SignupPage() {
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       errors.email = "올바른 이메일 형식이 아닙니다";
       isValid = false;
+    } else if (!formData.email.toLowerCase().endsWith('@timbel.net')) {
+      errors.email = "timbel.net 도메인의 이메일만 가입 가능합니다";
+      isValid = false;
     }
 
     // 비밀번호 검사
@@ -219,14 +222,18 @@ export default function SignupPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="name@company.com"
+                  placeholder="name@timbel.net"
                   className={`w-full h-11 rounded-md border ${formErrors.email ? 'border-red-500 dark:border-red-700' : 'border-gray-200 dark:border-gray-700'} bg-white dark:bg-gray-900 px-4 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 placeholder:text-gray-300 dark:placeholder:text-gray-600`}
                   value={formData.email}
                   onChange={handleInputChange}
                   required
                 />
-                {formErrors.email && (
+                {formErrors.email ? (
                   <p className="text-xs text-red-500 dark:text-red-400 mt-1">{formErrors.email}</p>
+                ) : (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    timbel.net 도메인의 이메일만 가입 가능합니다
+                  </p>
                 )}
               </div>
               <div className="space-y-2">

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation"; // router 객체를 사용하기 위해 추가
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -30,7 +31,11 @@ import {
   UserRole,
   createUserIfNotExists,
   getAllTeams,
-  getDepartments
+  getDepartments,
+  getWeeklyTask,
+  getWeeklyTaskNoteCounts,
+  subscribeToUserNotes,
+  getCurrentUserDetails
 } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { UserMenu } from "@/components/ui/user-menu";
@@ -49,6 +54,10 @@ import { LoaderCircle, RefreshCcw, AlertCircle } from "lucide-react";
 // 탭 관련 컴포넌트 추가
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+// 메모 관련 컴포넌트 추가
+import { NoteButton } from "@/components/ui/note-button";
+import { NoteDialog } from "@/components/ui/note-dialog";
+
 interface WeekData {
   weekNum: number;
   dateRange: string;
@@ -62,6 +71,9 @@ interface WeekData {
 export default function WeeklyTaskPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter(); // router 정의 추가
+  // globalTimeoutId를 위한 useRef 추가
+  const globalTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [savingWeeks, setSavingWeeks] = useState<number[]>([]);
   const [user, setUser] = useState<any>(null);
@@ -261,49 +273,38 @@ export default function WeeklyTaskPage() {
   
   // 사용자 정보 및 주간 업무 데이터 로드 함수
     const loadUserAndTasks = async () => {
-      try {
         setIsLoading(true);
-      setError(null);
       
-      // 전체 로딩 타임아웃 처리
-      const globalTimeoutId = setTimeout(() => {
-        setIsLoading(false);
-        setError("로딩 시간 초과. 새로고침 후 다시 시도해주세요.");
-        toast({
-          title: "로딩 시간 초과",
-          description: "데이터를 불러오는 중 시간이 초과되었습니다. 새로고침 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      }, 15000); // 15초 후에 타임아웃 처리
-      
-      // 세션 상태 초기화 시도 - 인증 문제를 해결하기 위한 추가 단계
       try {
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) {
-          console.error('세션 조회 오류:', sessionError);
-        }
-        
-        // 세션이 없는 경우 로그인 페이지로 리디렉션
-        if (!sessionData.session) {
-          clearTimeout(globalTimeoutId); // 타임아웃 취소
-          window.location.replace('/login');
+        // 1. 현재 로그인한 사용자 정보 조회
+        const userDetails = await getCurrentUserDetails();
+        if (!userDetails) {
+          console.error('사용자 정보를 찾을 수 없습니다.');
+          router.push('/login');
           return;
         }
-      } catch (sessionError) {
-        console.error('세션 확인 중 오류 발생:', sessionError);
-      }
+        
+        // SUPER 권한을 가진 사용자는 관리자 페이지로 리디렉션
+        if (userDetails.role === 'SUPER') {
+          console.log('SUPER 관리자 감지: 관리자 페이지로 이동');
+          router.push('/admin');
+          return;
+        }
+        
+        // 2. 사용자 ID와 현재 연도 저장
+        setUserId(userDetails.id);
         
         // 현재 사용자 정보 가져오기
         const user = await getCurrentUser();
         if (!user) {
         // 사용자가 없으면 로그인 페이지로 리디렉션 (부드러운 전환)
-        clearTimeout(globalTimeoutId); // 타임아웃 취소
+        if (globalTimeoutRef.current) {
+          clearTimeout(globalTimeoutRef.current); // 타임아웃 취소
+        }
         window.location.replace('/login');
           return;
         }
         
-        setUserId(user.id);
         setUser(user);
         setSelectedUserId(user.id);
       
@@ -330,16 +331,16 @@ export default function WeeklyTaskPage() {
       }
         
         // 사용자 프로필 정보 가져오기
-      let userDetails = null;
+      let userProfile = null;
       try {
-        userDetails = await getUserDetails(user.id);
+        userProfile = await getUserDetails(user.id);
       } catch (profileError) {
         console.error('사용자 프로필 정보 로드 중 오류:', profileError);
         // 프로필 로드 실패 시 기본값으로 계속 진행
       }
       
-        if (userDetails) {
-          setProfile(userDetails);
+        if (userProfile) {
+          setProfile(userProfile);
           
           // 권한에 따라 볼 수 있는 사용자 설정
           const hasHigherPermission = [
@@ -347,7 +348,7 @@ export default function WeeklyTaskPage() {
             UserRole.ADMIN, 
             UserRole.MANAGER, 
             UserRole.TEAM_LEADER
-          ].includes(userDetails.role as UserRole);
+          ].includes(userProfile.role as UserRole);
           
           setHasViewPermission(hasHigherPermission);
           
@@ -358,10 +359,10 @@ export default function WeeklyTaskPage() {
             setAccessibleUsers(accessibleUsersList);
             
             // 사업부장인 경우 부서 내 모든 사용자 필터링
-            if (userDetails.role === UserRole.MANAGER && userDetails.department_id) {
+            if (userProfile.role === UserRole.MANAGER && userProfile.department_id) {
               const departmentMembers = accessibleUsersList.filter(
                 (member: any) => 
-                  member.department_id === userDetails.department_id && 
+                  member.department_id === userProfile.department_id && 
                   member.id !== user.id
               );
               
@@ -418,7 +419,7 @@ export default function WeeklyTaskPage() {
               );
             }
             // SUPER 또는 ADMIN인 경우 모든 사용자를 팀별로 그룹화
-            else if (userDetails.role === UserRole.SUPER || userDetails.role === UserRole.ADMIN) {
+            else if (userProfile.role === UserRole.SUPER || userProfile.role === UserRole.ADMIN) {
               // 자신을 제외한 모든 접근 가능한 사용자
               const otherUsers = accessibleUsersList.filter(
                 (member: any) => member.id !== user.id
@@ -477,16 +478,16 @@ export default function WeeklyTaskPage() {
               );
             }
             // 팀장인 경우 팀원 목록 필터링
-            else if (userDetails.role === UserRole.TEAM_LEADER && userDetails.team_id) {
+            else if (userProfile.role === UserRole.TEAM_LEADER && userProfile.team_id) {
               const filteredTeamMembers = accessibleUsersList.filter(
                 (member: any) => 
-                  member.team_id === userDetails.team_id && 
+                  member.team_id === userProfile.team_id && 
                   member.id !== user.id
               );
               
               if (filteredTeamMembers.length > 0) {
                 setTeamMembers([{ 
-                  id: userDetails.team_id,
+                  id: userProfile.team_id,
                   name: '내 팀',
                   members: filteredTeamMembers 
                 }]);
@@ -526,7 +527,7 @@ export default function WeeklyTaskPage() {
         // 팀장이고 팀원이 있는 경우 팀원 데이터도 미리 로드
         if (
           teamMembers.length > 0 && 
-          (userDetails?.role === UserRole.TEAM_LEADER || userDetails?.role === UserRole.MANAGER)
+          (userProfile?.role === UserRole.TEAM_LEADER || userProfile?.role === UserRole.MANAGER)
         ) {
           // 첫 번째 팀원의 데이터도 미리 로드 (탭 전환 시 빠른 반응을 위해)
           const firstTeamMember = teamMembers[0];
@@ -554,7 +555,9 @@ export default function WeeklyTaskPage() {
       }
       
       // 전체 데이터 로드가 완료되면 타임아웃 취소
-      clearTimeout(globalTimeoutId);
+      if (globalTimeoutRef.current) {
+        clearTimeout(globalTimeoutRef.current);
+      }
       
       // 데이터 로드 후 이벤트 시스템 초기화
       setTimeout(() => {
@@ -576,6 +579,12 @@ export default function WeeklyTaskPage() {
     
   // 사용자 정보 및 주간 업무 데이터 로드
   useEffect(() => {
+    // 로딩 타임아웃 설정
+    globalTimeoutRef.current = setTimeout(() => {
+      setIsLoading(false);
+      setError("데이터 로드 시간이 초과되었습니다. 새로고침 후 다시 시도해주세요.");
+    }, 15000); // 15초 타임아웃
+    
     const loadInitialData = async () => {
       await loadUserAndTasks();
     };
@@ -590,8 +599,11 @@ export default function WeeklyTaskPage() {
       }
     });
     
-    // 클린업 함수에서 리스너 제거
+    // 클린업 함수에서 타임아웃도 제거
     return () => {
+      if (globalTimeoutRef.current) {
+        clearTimeout(globalTimeoutRef.current);
+      }
       data.subscription.unsubscribe();
     };
   }, [initializeEventSystem]);
@@ -688,6 +700,9 @@ export default function WeeklyTaskPage() {
       // 데이터 로드 완료 후 이벤트 시스템 초기화
       setTimeout(() => {
         initializeEventSystem();
+        
+        // 데이터 로드 후 메모 카운트도 즉시 로드 (추가)
+        loadNoteCounts();
       }, 300);
     } catch (error) {
       // 오류 발생 시 타임아웃 취소
@@ -789,7 +804,7 @@ export default function WeeklyTaskPage() {
       
       try {
         // 선택한 사용자의 주간 업무 로드
-        await loadWeeklyTasks(newUserId);
+      await loadWeeklyTasks(newUserId);
         clearTimeout(timeoutId);
         
       toast({
@@ -842,13 +857,13 @@ export default function WeeklyTaskPage() {
     // 테스트 모드가 활성화되어 있지 않고, 지난 주차인 경우 변경 불가
     if (!isTestMode && weekNum < currentWeek) return;
     
-        setWeeksData(prev => 
-          prev.map(week => 
-            week.weekNum === weekNum 
+    setWeeksData(prev => 
+      prev.map(week => 
+        week.weekNum === weekNum 
           ? { ...week, [field]: value } 
-              : week
-          )
-        );
+          : week
+      )
+    );
   };
   
   // 현재 주차로 자동 스크롤
@@ -1107,6 +1122,260 @@ export default function WeeklyTaskPage() {
     }
     
     return null;
+  };
+  
+  // 메모 관련 새로운 상태
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [selectedWeekForNotes, setSelectedWeekForNotes] = useState<number | null>(null);
+  const [weeklyNoteCounts, setWeeklyNoteCounts] = useState<Record<number, {total: number, unread: number, hasUnresolved: boolean}>>({});
+  // 미해결 메모가 있는 주차를 추적하는 상태 추가
+  const [weeklyUnresolvedStatus, setWeeklyUnresolvedStatus] = useState<Record<number, boolean>>({});
+  
+  // 현재 선택된 주차의 메모 관련 정보
+  const [selectedWeekTaskId, setSelectedWeekTaskId] = useState<string>('');
+  
+  // 메모 카운트 로드 함수
+  const loadNoteCounts = async () => {
+    if (!selectedUserId && !userId) {
+      console.log('메모 카운트 로드 실패: 사용자 ID가 없습니다.');
+      return Promise.resolve();
+    }
+    
+    const targetUserId = selectedUserId || userId || '';
+    
+    try {
+      console.log('메모 카운트 로드 시작:', targetUserId);
+      const counts = await getWeeklyTaskNoteCounts(targetUserId, currentYear);
+      console.log('메모 카운트 로드 완료:', counts);
+      
+      // 메모 카운트 상태 업데이트
+      setWeeklyNoteCounts(counts);
+      
+      // 해결되지 않은 메모가 있는 주차 표시
+      const unresolvedStatus: Record<number, boolean> = {};
+      
+      // 각 주차별 미해결 상태 설정
+      Object.keys(counts || {}).forEach(weekNumStr => {
+        const weekNum = parseInt(weekNumStr);
+        if (!isNaN(weekNum)) {
+          // 주차별 미해결 메모 여부 설정
+          unresolvedStatus[weekNum] = counts[weekNum]?.hasUnresolved || 
+            (counts[weekNum]?.unread > 0) || 
+            false;
+        }
+      });
+      
+      setWeeklyUnresolvedStatus(unresolvedStatus);
+      
+      return counts;
+    } catch (error) {
+      console.error('메모 카운트 로드 중 오류:', error);
+      return Promise.resolve([]);
+    }
+  };
+
+  // 선택한 주차의 주간 업무 ID 조회
+  const getWeeklyTaskId = async (weekNum: number) => {
+    try {
+      const targetUserId = selectedUserId || userId || '';
+      if (!targetUserId) return '';
+      
+      const task = await getWeeklyTask(targetUserId, currentYear, weekNum);
+      return task?.id || '';
+    } catch (error) {
+      console.error('주간 업무 ID 조회 중 오류 발생:', error);
+      return '';
+    }
+  };
+  
+  // 메모 버튼 클릭 핸들러 수정
+  const handleNoteButtonClick = async (weekNum: number) => {
+    try {
+      setSelectedWeekForNotes(weekNum);
+      
+      // 주간 업무 ID 가져오기
+      let taskId = await getWeeklyTaskId(weekNum);
+      
+      // 주간 업무 ID가 없는 경우 (저장된 레코드가 없는 경우)
+      if (!taskId) {
+        console.log('주간 업무 ID가 없어 새로 생성합니다', {weekNum});
+        
+        // 해당 주차의 주간 업무 데이터가 없으면 빈 데이터로 생성
+        const targetUserId = selectedUserId || userId || '';
+        if (!targetUserId) {
+      toast({
+            title: '메모 로드 실패',
+            description: '사용자 정보를 확인할 수 없습니다.',
+            variant: 'destructive',
+      });
+      return;
+    }
+    
+        // 해당 주차의 textarea 엘리먼트 직접 찾기 (없으면 빈 문자열 사용)
+        const thisWeekTextarea = document.getElementById(`this-week-${weekNum}`) as HTMLTextAreaElement;
+        const nextWeekTextarea = document.getElementById(`next-week-${weekNum}`) as HTMLTextAreaElement;
+        
+        const thisWeekContent = thisWeekTextarea ? thisWeekTextarea.value : "";
+        const nextWeekContent = nextWeekTextarea ? nextWeekTextarea.value : "";
+        
+        // 빈 주간 업무 데이터 저장
+        const success = await saveWeeklyTask(
+          targetUserId,
+        currentYear,
+        weekNum,
+          thisWeekContent,
+          nextWeekContent,
+          '',
+          userId || undefined
+        );
+        
+        if (!success) {
+        toast({
+            title: '메모 로드 실패',
+            description: '주간 업무 데이터를 생성하지 못했습니다.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        
+        // 새로 생성된 주간 업무 ID 가져오기
+        taskId = await getWeeklyTaskId(weekNum);
+        
+        // 여전히 ID가 없으면 오류
+        if (!taskId) {
+        toast({
+            title: '메모 로드 실패',
+            description: '주간 업무 데이터를 생성했으나 ID를 가져오지 못했습니다.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        
+        // 생성 완료 후 주간 업무 데이터 및 메모 카운트 갱신
+        await loadWeeklyTasks(targetUserId);
+      }
+      
+      // 찾은 또는 새로 생성된 주간 업무 ID로 메모 대화창 열기
+      setSelectedWeekTaskId(taskId);
+      setNoteDialogOpen(true);
+      
+      console.log('메모 대화창을 열었습니다:', {weekNum, taskId});
+    } catch (error) {
+      console.error('메모 로드 준비 중 오류 발생:', error);
+      toast({
+        title: '오류 발생',
+        description: '메모를 로드하는 중 문제가 발생했습니다.',
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  // 실시간 구독 취소 함수 참조
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  
+  // 실시간 구독 설정 함수
+  const setupRealtimeSubscription = (targetUserId: string) => {
+    // 실시간 구독 대신 주기적 폴링 방식으로 변경
+    console.log('주기적 폴링 방식으로 메모 상태 확인 시작:', targetUserId);
+    
+    // 이미 간격 타이머가 실행 중인 경우 취소
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+    
+    // 사용자 입력 중인지 확인하는 상태 추가
+    let isUserTyping = false;
+    
+    // 폼 요소에 포커스 이벤트 리스너 추가
+    const addFocusListeners = () => {
+      const textareas = document.querySelectorAll('textarea');
+      textareas.forEach(textarea => {
+        textarea.addEventListener('focus', () => { isUserTyping = true; });
+        textarea.addEventListener('blur', () => { 
+          // 약간의 지연을 두어 다른 작업 완료 후 상태 변경
+          setTimeout(() => { isUserTyping = false; }, 100); 
+        });
+      });
+    };
+    
+    // 초기 리스너 설정
+    addFocusListeners();
+    
+    // 10초마다 메모 카운트 갱신 (사용자가 입력 중이 아닐 때만)
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible' && !isUserTyping) {
+        console.log('주기적 폴링: 메모 카운트 갱신');
+        
+        // 현재 포커스된 요소 저장
+        const activeElement = document.activeElement;
+        
+        // 메모 카운트 로드
+        loadNoteCounts().then(() => {
+          // 로드 후 DOM이 업데이트되면 리스너 다시 추가
+          setTimeout(() => {
+            addFocusListeners();
+            
+            // 이전에 포커스된 요소가 있고 여전히 문서 내에 존재하면 포커스 복원
+            if (activeElement && document.contains(activeElement)) {
+              (activeElement as HTMLElement).focus();
+            }
+          }, 100);
+        });
+      }
+    }, 10000);
+    
+    // 구독 취소 함수로 간격 타이머 취소 반환
+    unsubscribeRef.current = () => {
+      console.log('주기적 폴링 중지');
+      clearInterval(intervalId);
+    };
+  };
+  
+  // 실시간 업데이트 처리 함수
+  const handleRealtimeUpdate = (payload: any) => {
+    console.log('메모 업데이트 감지:', payload);
+    loadNoteCounts();
+  };
+  
+  // 주간 업무 데이터가 로드된 후 메모 카운트도 로드
+  useEffect(() => {
+    if (!isLoading && (selectedUserId || userId)) {
+      loadNoteCounts();
+    }
+  }, [isLoading, selectedUserId, userId]);
+  
+  // 컴포넌트 마운트/언마운트 처리
+  useEffect(() => {
+    // 사용자 ID가 있을 때만 실시간 구독 설정
+    if (userId) {
+      setupRealtimeSubscription(userId);
+    }
+    
+    // 컴포넌트 언마운트 시 구독 취소
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
+  }, [userId]);
+  
+  // 사용자 전환 시 실시간 구독 업데이트
+  useEffect(() => {
+    if (selectedUserId) {
+      // 선택된 사용자의 메모에 대한 실시간 구독으로 전환
+      setupRealtimeSubscription(selectedUserId);
+    } else if (userId) {
+      // 현재 로그인한 사용자의 메모로 다시 구독
+      setupRealtimeSubscription(userId);
+    }
+  }, [selectedUserId]);
+  
+  // 메모 업데이트 후 카운트 새로고침
+  const handleNotesUpdated = () => {
+    console.log('메모 업데이트 감지: 메모 카운트 새로고침');
+    loadNoteCounts();
   };
   
   return (
@@ -1475,8 +1744,20 @@ export default function WeeklyTaskPage() {
                                   ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" 
                                   : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
                               }`}>
-                              {week.isExistInDB ? "완료됨" : "-"}
+                              {week.isExistInDB ? "완료됨" : ""}
                             </span>
+                          )}
+                          
+                          {/* 메모 버튼 추가 - 주간 업무가 존재하는 경우만 표시 */}
+                          {week.isExistInDB && (
+                            <div className="flex items-center justify-center mt-2">
+                              <NoteButton 
+                                count={weeklyNoteCounts[week.weekNum]?.total || 0}
+                                unreadCount={weeklyNoteCounts[week.weekNum]?.unread || 0}
+                                hasUnresolved={weeklyUnresolvedStatus[week.weekNum] || false}
+                                onClick={() => handleNoteButtonClick(week.weekNum)}
+                              />
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -1501,6 +1782,18 @@ export default function WeeklyTaskPage() {
               />
             </div>
           </div>
+          
+          {/* 메모 대화상자 추가 */}
+          {noteDialogOpen && selectedWeekTaskId && (
+            <NoteDialog
+              weeklyTaskId={selectedWeekTaskId}
+              recipientId={selectedUserId || userId || ''}
+              currentUserId={userId || ''}
+              isOpen={noteDialogOpen}
+              setIsOpen={setNoteDialogOpen}
+              onNotesUpdated={handleNotesUpdated}
+            />
+          )}
         </>
       )}
     </div>
